@@ -29,3 +29,21 @@ func (d *DB) CreateUser(name, password string) (*model.User, error) {
 	}
 	return u, nil
 }
+
+func (d *DB) GetUser(id uint) (*model.User, error) {
+	u := new(model.User)
+	err := d.dbx.QueryRow(`SELECT id, name, password FROM "user" WHERE id = $1`, id).Scan(&u.ID, &u.Name, &u.Password)
+	if err != nil {
+		return nil, err
+	}
+	return u, nil
+}
+
+func (d *DB) GetUserByName(name string) (*model.User, error) {
+	u := new(model.User)
+	err := d.dbx.QueryRow(`SELECT id, name, password FROM "user" WHERE name = $1`, name).Scan(&u.ID, &u.Name, &u.Password)
+	if err != nil {
+		return nil, err
+	}
+	return u, nil
+}
