@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"io"
 	"net"
 	"os"
 	"os/signal"
@@ -10,6 +11,9 @@ import (
 	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
 	grpc_recovery "github.com/grpc-ecosystem/go-grpc-middleware/recovery"
 	userpb "github.com/loadlab-go/pkg/proto/user"
+	otgrpc "github.com/opentracing-contrib/go-grpc"
+	"github.com/opentracing/opentracing-go"
+	"github.com/uber/jaeger-client-go/config"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 )
@@ -23,14 +27,23 @@ var (
 
 func main() {
 	flag.Parse()
+
+	tracerCloser, err := initTracer()
+	if err != nil {
+		logger.Panic("init tracer failed", zap.Error(err))
+	}
+	defer tracerCloser.Close()
+
 	initialize()
 
 	srv := grpc.NewServer(
 		grpc.StreamInterceptor(grpc_middleware.ChainStreamServer(
 			grpc_recovery.StreamServerInterceptor(),
+			otgrpc.OpenTracingStreamServerInterceptor(opentracing.GlobalTracer()),
 		)),
 		grpc.UnaryInterceptor(grpc_middleware.ChainUnaryServer(
 			grpc_recovery.UnaryServerInterceptor(),
+			otgrpc.OpenTracingServerInterceptor(opentracing.GlobalTracer()),
 		)))
 
 	us := &userSvc{repo: db}
@@ -72,4 +85,18 @@ func signalSet(cb func()) {
 	logger.Warn("exit signal", zap.String("signal", s.String()))
 
 	cb()
+}
+
+func initTracer() (io.Closer, error) {
+	cfg := config.Configuration{ServiceName: "usersvc"}
+	_, err := cfg.FromEnv()
+	if err != nil {
+		return nil, err
+	}
+	tracer, tracerCloser, err := cfg.NewTracer()
+	if err != nil {
+		return nil, err
+	}
+	opentracing.InitGlobalTracer(tracer)
+	return tracerCloser, nil
 }
